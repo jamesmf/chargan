@@ -38,22 +38,18 @@ ct.fit(ag["train"]["text"], progbar=True)
 # Create our character-level autoencoder
 ae = CharAutoencoder(ct)
 
-# tokenize an example dataset
-# tok = np.array(ct.tokenize(ag["train"]["text"][:1000]))
-# tok = tf.keras.preprocessing.sequence.pad_sequences(
-#     tok, maxlen=100, dtype="int32", padding="pre", truncating="pre", value=0.0
-# )
-
-# compile our model
+# compile our autoencoder
 scce = tf.keras.losses.SparseCategoricalCrossentropy()
 ae.compile("adam", scce)
 
+# create a generator to feed x, x examples to the autoencoder
 bsize = 128
 gen = CharAEGenerator(ct, bsize, max_sample_len=128, min_sample_len=8)
+
 # fit the autoencoder
 test_strs = ag["test"]["text"][:5]
 
-epochs = 5
+epochs = 10
 for _ in range(0, epochs):
     ae.fit(
         gen(ag["train"]["text"]),
@@ -62,3 +58,8 @@ for _ in range(0, epochs):
     )
 
     decoding_test(test_strs, ct, ae)
+
+
+# TODO: instantiate a pretrained model to use for conditioning
+
+#
