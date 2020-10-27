@@ -4,13 +4,14 @@ from tokenizers import BertWordPieceTokenizer
 from typing import List, Union
 import json
 from collections import Counter
-from typing import Dict, List, Iterable
+from typing import Dict, List, Iterable, Generator
+from tensorflow.keras.preprocessing.sequence import pad_sequences
 
 
 class CharTokenizer:
     """
     Simple class for fitting a character-to-index mapping over a dataset
-    as an Iterable[str]
+    as a List[str] (works with datasets.Dataset)
     """
 
     def __init__(
@@ -41,7 +42,6 @@ class CharTokenizer:
 
         counts = [k for k, v in char_counter.items() if v >= min_char_freq]
         self.char_rev = {0: "", 1: "?", 2: "?", 3: ""}
-        self.token_rev = {}
         for c in sorted(counts):
             n = len(self.char_rev)
             self.char_rev[n] = c
@@ -82,3 +82,56 @@ class CharTokenizer:
             result = json.load(f)
         for key, value in result.items():
             setattr(self, key, value)
+
+
+class CharAEGenerator:
+    """
+    Generates examples for the task of autoencoding character-level text
+    """
+
+    def __init__(
+        self,
+        tokenizer: CharTokenizer,
+        batch_size: int,
+        max_sample_len: int = 64,
+        min_sample_len: int = 4,
+    ):
+        self.tokenizer = tokenizer
+        self.batch_size = batch_size
+        self.max_sample_len = max_sample_len
+        self.min_sample_len = min_sample_len
+
+    def extract_sample(self, inp_str: str) -> str:
+        """
+        Take a random substring
+        """
+        samp_len = np.random.randint(self.min_sample_len, self.max_sample_len + 1)
+        if len(inp_str) <= samp_len:
+            return inp_str
+        ind_max = max(len(inp_str) - samp_len, 0)
+        r = np.random.randint(0, ind_max + 1)
+        return inp_str[r : r + samp_len]
+
+    def __call__(self, inp: List[str]) -> Generator[List[np.ndarray], None, None]:
+        """
+        Generator function that creates batches of examples of length self.sample_len tokenized
+        and ready to feed to the autoencoder
+        """
+        ind = 0
+        while True:
+            batch = [self.extract_sample(s) for s in inp[ind : ind + self.batch_size]]
+            batch_tokens = self.tokenizer.tokenize(batch)
+            mlen = max([len(i) for i in batch_tokens])
+            mlen -= mlen % 4  # even number for the down/upsampling to work
+            sequences = pad_sequences(
+                batch_tokens,
+                maxlen=mlen,
+                dtype="int32",
+                padding="pre",
+                truncating="pre",
+                value=0.0,
+            )
+            yield sequences, sequences
+            ind += self.batch_size
+            if ind >= len(inp):
+                ind = 0
